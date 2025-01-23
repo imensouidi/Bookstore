@@ -1,12 +1,17 @@
+import os
 import openai
 from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement à partir du fichier .env
+load_dotenv()
 
 # Configuration Azure OpenAI
-openai_endpoint = "https://webmatchingevalmodel.openai.azure.com"
-openai_key = "606863432472474983eb27639e3e175c"
-api_version = "2023-03-15-preview"
-model = "gpt-4"
+openai_endpoint = os.getenv("OPENAI_ENDPOINT")
+openai_key = os.getenv("OPENAI_KEY")
+api_version = os.getenv("OPENAI_API_VERSION")
+model = os.getenv("OPENAI_MODEL")
 
 openai.api_type = "azure"
 openai.api_base = openai_endpoint
@@ -14,9 +19,9 @@ openai.api_version = api_version
 openai.api_key = openai_key
 
 # Configuration Azure Search
-search_endpoint = "https://imensearch.search.windows.net"
-index_name = "library"
-search_api_key = "wXcEg4PRUhGsKaASOcWCbeHDOQzZ9IhaKEva7Ezea0AzSeDNeBWV"
+search_endpoint = os.getenv("SEARCH_ENDPOINT")
+index_name = os.getenv("SEARCH_INDEX_NAME")
+search_api_key = os.getenv("SEARCH_API_KEY")
 
 # Initialisation du client Azure Search
 search_client = SearchClient(
@@ -58,7 +63,6 @@ def search_book(query):
 
         # Étape 2 : Appliquer fuzzy matching à la requête enrichie
         fuzzy_query = f"{enriched_query}~"
-    
 
         # Étape 3 : Détecter si la requête concerne une catégorie spécifique
         if fuzzy_query.startswith("978"):  # ISBN détecté
@@ -71,7 +75,7 @@ def search_book(query):
         else:  # Recherche textuelle générale
             results = search_client.search(search_text=fuzzy_query)
 
-        # Étape 3 : Filtrer les résultats pour éviter les correspondances globales
+        # Filtrer les résultats pour éviter les correspondances globales
         filtered_results = [
             result for result in results
         ]
