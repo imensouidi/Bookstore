@@ -1,0 +1,17 @@
+2025-01-28 17:05:14,116 - WARNING - Échec de l'enrichissement: name 'self' is not defined
+2025-01-28 17:05:16,434 - WARNING - Échec de l'enrichissement: name 'self' is not defined
+2025-01-28 17:05:19,289 - WARNING - Échec de l'enrichissement: name 'self' is not defined
+2025-01-28 17:05:22,721 - WARNING - Échec de l'enrichissement: name 'self' is not defined
+2025-01-28 17:05:32,853 - WARNING - Échec de l'enrichissement: name 'self' is not defined
+2025-01-28 17:05:32,854 - INFO - Requête finale: "misérables"~
+2025-01-28 17:05:32,856 - INFO - Request URL: 'https://imensearch.search.windows.net/indexes('library')/docs/search.post.search?api-version=REDACTED'
+Request method: 'POST'
+Request headers:
+    'Content-Type': 'application/json'
+    'Content-Length': '102'
+    'api-key': 'REDACTED'
+    'Accept': 'application/json;odata.metadata=none'
+    'x-ms-client-request-id': 'b3d089dc-dd91-11ef-b3b3-6e30833d7b6d'
+    'User-Agent': 'azsdk-python-search-documents/11.5.2 Python/3.13.1 (macOS-15.2-arm64-arm-64bit-Mach-O)'
+A body is sent with the request
+2025-01-28 17:05:32,856 - ERROR - Erreur de recherche: Session.request() got an unexpected keyword argument 'query_language'

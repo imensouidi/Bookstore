@@ -16,27 +16,10 @@ async def main(message):
 
     # Vérifiez si une action précédente est en attente
     if user_state[user_id]["action"] == "details":
-        book_title = query
-        results = user_state[user_id]["results"]
-        book_details = next(
-            (result for result in results if result.get("Title", "").lower() == book_title.lower()), None
-        )
-        user_state[user_id]["action"] = None  # Réinitialiser l'action
-
-        if book_details:
-            response = (
-                f"**Détails pour '{book_title}'** :\n"
-                f"**Auteur :** {book_details.get('Author', 'N/A')}\n"
-                f"**Description :** {book_details.get('Description', 'N/A')}\n"
-                f"**Catégorie :** {book_details.get('Category', 'N/A')}\n"
-                f"**ISBN :** {book_details.get('ISBN', 'N/A')}\n"
-            )
-        else:
-            response = "Aucun livre trouvé avec ce titre. Essayez un autre titre."
-        await cl.Message(content=response).send()
+        await handle_details(message, user_id, query)
         return
 
-    # Sinon, effectuer une recherche normale
+    # Recherche normale
     results = search_book(query)
     user_state[user_id]["results"] = results
 
@@ -45,18 +28,43 @@ async def main(message):
         for result in results:
             response += (
                 f"**Titre :** {result.get('Title', 'N/A')}\n"
-                f"**Auteur :** {result.get('Author', 'N/A')}\n"
-                f"**Catégorie :** {result.get('Category', 'N/A')}\n"
-                f"**Description :** {result.get('Description', 'N/A')}\n\n"
+                f"**Auteur :** {result.get('Author', 'N/A')}\n\n"
             )
-        response += "- Tapez **Plus d'informations** et indiquez le titre d'un livre pour plus de détails.\n"
+        response += (
+            "- Tapez **Plus d'informations** et indiquez le titre d'un livre pour plus de détails.\n"
+        )
     else:
         response = f"Aucun livre trouvé pour '{query}'. Voulez-vous reformuler votre requête ?"
 
     await cl.Message(content=response).send()
 
+async def handle_details(message, user_id, query):
+    """Gère les demandes de détails pour un livre spécifique."""
+    results = user_state[user_id]["results"]
+    book_title = query
+
+    # Cherchez le livre correspondant au titre
+    book_details = next(
+        (result for result in results if result.get("Title", "").lower() == book_title.lower()), None
+    )
+    user_state[user_id]["action"] = None  # Réinitialiser l'action
+
+    if book_details:
+        response = (
+            f"**Détails pour '{book_title}'** :\n"
+            f"**Auteur :** {book_details.get('Author', 'N/A')}\n"
+            f"**Description :** {book_details.get('Description', 'N/A')}\n"
+            f"**Catégorie :** {book_details.get('Category', 'N/A')}\n"
+            f"**ISBN :** {book_details.get('ISBN', 'N/A')}\n"
+        )
+    else:
+        response = "Aucun livre trouvé avec ce titre. Essayez un autre titre."
+
+    await cl.Message(content=response).send()
+
 @cl.on_message
 async def handle_followup(message):
+    """Gère les interactions utilisateur pour demander des détails."""
     user_id = getattr(message.author, "id", message.author)
     query = message.content.strip().lower()
 
