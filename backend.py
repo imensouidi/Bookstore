@@ -1,156 +1,177 @@
 import os
+import re
+import shlex
 from openai import AzureOpenAI
 from azure.search.documents import SearchClient
 from azure.core.credentials import AzureKeyCredential
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Chargement des variables d'environnement
 load_dotenv()
 
-# Configuration Azure OpenAI
-openai_endpoint = os.getenv("OPENAI_ENDPOINT")
-openai_key = os.getenv("OPENAI_KEY")
-api_version = os.getenv("OPENAI_API_VERSION")
-model = os.getenv("OPENAI_MODEL")
-
-# Initialize Azure OpenAI client
+# Initialisation des clients Azure
 azure_openai_client = AzureOpenAI(
-    api_key=openai_key,
-    api_version=api_version,
-    azure_endpoint=openai_endpoint
+    api_key=os.getenv("OPENAI_KEY"),
+    api_version=os.getenv("OPENAI_API_VERSION"),
+    azure_endpoint=os.getenv("OPENAI_ENDPOINT")
 )
 
-# Configuration Azure Search
-search_endpoint = os.getenv("SEARCH_ENDPOINT")
-index_name = os.getenv("SEARCH_INDEX_NAME")
-search_api_key = os.getenv("SEARCH_API_KEY")
-
-# Initialize Azure Search client
 search_client = SearchClient(
-    endpoint=search_endpoint,
-    index_name=index_name,
-    credential=AzureKeyCredential(search_api_key)
+    endpoint=os.getenv("SEARCH_ENDPOINT"),
+    index_name=os.getenv("SEARCH_INDEX_NAME"),
+    credential=AzureKeyCredential(os.getenv("SEARCH_API_KEY"))
 )
 
 def process_query_with_openai(query):
-    """
-    Use Azure OpenAI to enrich and rephrase the user query.
-    """
+    """Correction et enrichissement intelligent de la requête"""
     try:
         response = azure_openai_client.chat.completions.create(
-            model=model,  # Use the deployment name of your model
+            model=os.getenv("OPENAI_MODEL"),
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "You are an intelligent assistant that helps search for books in a library. "
-                        "Understand the user query and enrich it by adding similar terms and relevant keywords "
-                        "to improve the search. Use only the information provided in the query."
+                        "Expert en recherche documentaire. Corrigez UNIQUEMENT les erreurs évidentes. "
+                        "Conservez tous les termes originaux. Ajoutez des variantes linguistiques si pertinent. "
+                        "Pour les phrases composées, utilisez des guillemets. N'utilisez PAS d'opérateurs booléens (OR/AND/NOT).\n"
+                        "Exemples :\n"
+                        "- 'book by victor' → 'victor hugo'\n"
+                        "- 'romantik' → 'romantique romantic'\n"
+                        "- 'les mis' → '\"les misérables\"'\n"
+                        "- '978...' → NE RIEN MODIFIER"
                     )
                 },
                 {
                     "role": "user",
-                    "content": f"Here is a user query: {query}. Improve it to make it more precise and effective."
+                    "content": f"Corrigez cette requête en conservant tous les termes : {query}"
                 }
             ],
-            max_tokens=300,  # Adjust as needed
-            temperature=0.7  # Adjust for creativity
+            temperature=0.3,
+            max_tokens=150
         )
-        # Extract the enriched query
-        enriched_query = response.choices[0].message.content.strip()
-        return enriched_query
+        optimized = response.choices[0].message.content.strip()
+        return re.sub(r'\b(OR|AND|NOT)\b', ' ', optimized, flags=re.IGNORECASE)
     except Exception as e:
-        print(f"Error communicating with Azure OpenAI: {e}")
-        return query  # Return the original query in case of an error
+        print(f"Erreur OpenAI : {str(e)}")
+        return query
 
-def reformat_results_with_openai(results):
-    """
-    Use Azure OpenAI to reformat the search results into a human-readable format.
-    """
+def execute_search(query):
+    """Exécution de la recherche avec stratégie avancée"""
     try:
-        # Extract relevant fields from the search results
-        formatted_results = []
-        for result in results:
-            title = result.get("Title", "Unknown Title")
-            author = result.get("Author", "Unknown Author")
-            category = result.get("Category", "Unknown Category")
-            description = result.get("Description", "No description available.")
-            isbn = result.get("ISBN", "Unknown ISBN")
-
-            # Format each result as a string
-            formatted_result = (
-                f"Title: {title}\n"
-                f"Author: {author}\n"
-                f"Category: {category}\n"
-                f"Description: {description}\n"
-                f"ISBN: {isbn}\n"
+        query = query.strip()
+        
+        # Vérifiez si la requête est un ISBN
+        if re.match(r'^(\d+[- ]?){9,}[\dX]$', query):
+            clean_isbn = re.sub(r'[^0-9X]', '', query.upper())  # Supprimer les tirets et espaces
+            results = search_client.search(
+                search_text="",
+                query_type="simple",
+                search_mode="all",
+                filter=f"ISBN eq '{query}' or ISBN eq '{clean_isbn}'",
+                top=1
             )
-            formatted_results.append(formatted_result)
-
-        # Combine all formatted results into a single string
-        results_str = "\n".join(formatted_results)
-
-        # Send the formatted results to OpenAI for reformatting
-        response = azure_openai_client.chat.completions.create(
-            model=model,  # Use the deployment name of your model
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are an intelligent assistant that helps format search results into a human-readable format. "
-                        "Reformat the following search results into a clear and concise summary. "
-                        "Include the title, author, category, and a brief description for each book. "
-                        "Use only the information provided in the search results."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": f"Here are the search results:\n{results_str}\n\nReformat them into a human-readable summary."
-                }
-            ],
-            max_tokens=500,  # Adjust as needed
-            temperature=0.5  # Adjust for creativity
+            return results
+        
+        # Si ce n'est pas un ISBN, procédez à la recherche classique
+        tokens = shlex.split(query)
+        terms = [
+            f'"{token}"' if token.startswith('"') and token.endswith('"') else f"{token}~"
+            for token in tokens if len(token) > 2
+        ]
+        search_text = " ".join(terms)
+        
+        return search_client.search(
+            search_text=search_text,
+            query_type="full",
+            search_mode="all",
+            search_fields=["Title", "Author", "Category", "Description", "ISBN"],
+            top=10,
+            include_total_count=True
         )
-        # Extract the reformatted results
-        reformatted_results = response.choices[0].message.content.strip()
-        return reformatted_results
     except Exception as e:
-        print(f"Error reformatting results with OpenAI: {e}")
-        return results  # Return the original results in case of an error
-
-def search_book(query):
-    """
-    Search for books in Azure Search with precise matches for categories.
-    """
-    try:
-        # Step 1: Enrich the query with OpenAI
-        enriched_query = process_query_with_openai(query)
-
-        # Step 2: Apply fuzzy matching to the enriched query
-        fuzzy_query = f"{enriched_query}~"
-
-        # Step 3: Search Azure Search
-        results = search_client.search(search_text=fuzzy_query)
-
-        # Step 4: Reformat the results using OpenAI
-        reformatted_results = reformat_results_with_openai(results)
-
-        return reformatted_results
-
-    except Exception as e:
-        print(f"Error during search: {e}")
+        print(f"Erreur de recherche : {str(e)}")
         return []
 
-# Example usage with dynamic query input
-if __name__ == "__main__":
-    while True:
-        query = input("Enter your search query (or type 'exit' to quit): ")
-        if query.lower() == 'exit':
-            break
-        results = search_book(query)
+def format_results(results):
+    """Formatage des résultats avec validation robuste"""
+    if not results:
+        return "Aucun résultat trouvé."
+
+    output = []
+    for result in results:
+        try:
+            entry = [
+                f"• {result['Title']}",
+                f"  Auteur : {result.get('Author', 'Inconnu')}",
+                f"  Catégorie : {result.get('Category', 'Général')}",
+                f"  ISBN : {result.get('ISBN', 'N/A')}",
+                f"  Description : {result.get('Description', '')[:120]}..."
+            ]
+            output.append("\n".join(entry))
+        except KeyError as e:
+            print(f"Champ manquant : {str(e)}")
+    
+    return "\n\n".join(output) if output else "Aucun résultat correspondant aux critères."
+
+def search_book(query):
+    """Workflow complet de recherche avec prise en charge ISBN"""
+    if not query.strip():
+        return "Veuillez entrer une requête valide."
+    
+    # Vérifiez si la requête est un ISBN
+    if re.match(r'^(\d+[- ]?){9,}[\dX]$', query):
+        # Nettoyage et formatage de l'ISBN
+        raw_isbn = query.strip()
+        clean_isbn = re.sub(r'[^0-9X]', '', raw_isbn.upper())  # Supprimer les tirets et espaces
+        print(f"[Debug] Recherche directe par ISBN : {raw_isbn} et {clean_isbn}")
         
-        if results:
-            print("Reformatted Search Results:")
-            print(results)
-        else:
-            print("No results found.")
+        try:
+            # Essayer les deux formats : avec et sans tirets
+            results = search_client.search(
+                search_text="",
+                query_type="simple",
+                search_mode="all",
+                filter=f"ISBN eq '{raw_isbn}' or ISBN eq '{clean_isbn}'",
+                top=1
+            )
+            return format_results(results)
+        except Exception as e:
+            print(f"Erreur lors de la recherche par ISBN : {str(e)}")
+            return "Erreur lors de la recherche par ISBN. Veuillez réessayer."
+    
+    # Si ce n'est pas un ISBN, passez par le traitement standard
+    try:
+        optimized_query = process_query_with_openai(query)
+        print(f"[Debug] Requête initiale : '{query}' → Optimisée : '{optimized_query}'")
+        
+        search_results = execute_search(optimized_query)
+        return format_results(search_results)
+
+    except Exception as e:
+        print(f"Erreur système : {str(e)}")
+        return "Erreur temporaire du système. Veuillez réessayer."
+
+# Interface utilisateur
+if __name__ == "__main__":
+    print("📖 Système de recherche de livres - Mode interactif 📖\n")
+    
+    while True:
+        try:
+            query = input("\nEntrez votre recherche (ou 'exit' pour quitter) : ").strip()
+            if query.lower() in ('exit', 'quit'):
+                print("\nMerci d'avoir utilisé notre système de recherche. Au revoir !")
+                break
+                
+            results = search_book(query)
+            
+            if "Aucun résultat" not in results:
+                print("\n🔎 Résultats de la recherche :")
+                print(results)
+            else:
+                print("\nℹ️ " + results)
+                
+        except KeyboardInterrupt:
+            print("\nRecherche annulée par l'utilisateur.")
+            break
+        except Exception as e:
+            print(f"\n⚠️ Erreur inattendue : {str(e)}")

@@ -1,64 +1,69 @@
 import chainlit as cl
 from backend import search_book
 
-# État utilisateur pour suivre les conversations
-user_state = {}
+# Mémoire pour stocker les résultats lors d'une recherche
+stored_results = {}
+
 
 @cl.on_message
-async def main(message):
-    # Obtenez l'identifiant utilisateur
-    user_id = getattr(message.author, "id", message.author)
+async def main(message: cl.Message):
+    global stored_results
+
+    # Requête initiale ou interaction
     query = message.content.strip()
 
-    # Initialiser l'état de l'utilisateur s'il n'existe pas encore
-    if user_id not in user_state:
-        user_state[user_id] = {"results": [], "action": None}
-
-    # Vérifiez si une action précédente est en attente
-    if user_state[user_id]["action"] == "details":
-        book_title = query
-        results = user_state[user_id]["results"]
-        book_details = next(
-            (result for result in results if result.get("Title", "").lower() == book_title.lower()), None
-        )
-        user_state[user_id]["action"] = None  # Réinitialiser l'action
-
-        if book_details:
-            response = (
-                f"**Détails pour '{book_title}'**:\n"
-                f"**Auteur**: {book_details.get('Author', 'N/A')}\n"
-                f"**Description**: {book_details.get('Description', 'N/A')}\n"
-                f"**Catégorie**: {book_details.get('Category', 'N/A')}\n"
-            )
-        else:
-            response = "Aucun livre trouvé avec ce titre. Essayez un autre titre."
-        await cl.Message(content=response).send()
+    # Si aucune requête n'est fournie
+    if not query:
+        await cl.Message(content="❌ Veuillez entrer une requête valide.").send()
         return
 
-    # Sinon, effectuer une recherche normale
-    results = search_book(query)  # Retirer `await` si non asynchrone
-    user_state[user_id]["results"] = results
+    # Cas 1 : L'utilisateur demande "plus d'informations"
+    if query.lower() == "plus d'informations":
+        if not stored_results:
+            await cl.Message(content="ℹ️ Vous devez effectuer une recherche avant de demander plus d'informations.").send()
+            return
 
-    if results:
-        response = "Voici les informations des livres trouvés :\n\n"
-        for result in results:
-            response += (
-                f"**Titre**: {result.get('Title', 'N/A')}\n"
-                f"**Auteur**: {result.get('Author', 'N/A')}\n\n"
-            )
-        response += "- Tapez **Plus d'informations** pour un livre (entrez le titre)\n"
-    else:
-        response = f"Aucun livre trouvé pour '{query}'. Voulez-vous reformuler votre requête ?"
+        await cl.Message(content="🔎 Entrez le titre exact du livre pour afficher plus d'informations :").send()
+        return
 
-    await cl.Message(content=response).send()
+    # Cas 2 : Recherche spécifique d'un titre pour plus d'informations
+    if query in stored_results:
+        detailed_info = stored_results[query]
+        await cl.Message(content=f"📖 Informations détaillées pour '{query}' :\n\n{detailed_info}").send()
+        return
 
-@cl.on_message
-async def handle_followup(message):
-    user_id = getattr(message.author, "id", message.author)
-    query = message.content.strip().lower()
+    # Cas 3 : Nouvelle recherche ou requête utilisateur
+    results = search_book(query)
 
-    if query == "plus d'informations":
-        user_state[user_id]["action"] = "details"
-        await cl.Message(content="Indiquez le titre du livre pour lequel vous souhaitez plus d'informations :").send()
-    else:
-        await main(message)  # Retour à la recherche principale
+    if "Aucun résultat" in results:
+        await cl.Message(content="ℹ️ Aucun résultat trouvé. Essayez avec une autre requête.").send()
+        return
+
+    # Traitement et affichage des résultats (titre + auteur uniquement)
+    await cl.Message(content="🔎 Résultats de la recherche (titre et auteur uniquement) :").send()
+    books = []
+    stored_results = {}  # Réinitialisation des résultats stockés
+
+    # Traitement des résultats
+    for line in results.split("\n\n"):  # Supposons que les résultats soient séparés par des sauts de ligne
+        try:
+            lines = line.split("\n")
+            title = lines[0].replace("• ", "").strip()
+            author = lines[1].replace("Auteur : ", "").strip()
+            books.append(f"- **{title}** (par {author})")
+
+            # Stocker les informations détaillées pour la recherche ultérieure
+            stored_results[title] = line
+
+        except IndexError:
+            continue
+
+    # Afficher les titres et auteurs
+    if books:
+        await cl.Message(content="\n".join(books)).send()
+
+    # Proposer la suite
+    await cl.Message(
+        content="ℹ️ Si vous voulez plus d'informations sur un livre, tapez **plus d'informations**.\n"
+                "Sinon, vous pouvez effectuer une nouvelle recherche."
+    ).send()
