@@ -1,6 +1,3 @@
-Voici le code prêt à être copié et collé dans un fichier `README.md` :  
-
-```markdown
 # 📚 Système de Recherche de Livres avec Azure OpenAI
 
 Bienvenue dans cette application de recherche de livres basée sur Azure et OpenAI ! Ce projet propose un système intelligent qui corrige, enrichit et traite les requêtes des utilisateurs pour fournir des résultats précis et pertinents.
@@ -77,8 +74,3 @@ Voici un aperçu simplifié du processus :
 3. **Recherche optimisée** : Azure Cognitive Search effectue une recherche sur les données.
 4. **Résultats affichés** : Les résultats pertinents sont présentés à l'utilisateur via l'interface interactive.
 
----
-
-## 🏆 Remerciements
-
-Merci d'utiliser notre système de recherche ! Si vous avez des questions ou des suggestions, n'hésitez pas à nous contacter. 🎉
